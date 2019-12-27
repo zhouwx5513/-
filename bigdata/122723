@@ -1,0 +1,1078 @@
+\documentclass[final,5p]{elsarticle}
+
+\usepackage{times, epsfig, color}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{multirow}
+%\usepackage{graphics}
+\usepackage{mathptmx}
+\usepackage[misc]{ifsym}
+\usepackage{subfigure}
+\usepackage{amssymb}
+\usepackage{latexsym}
+\usepackage{natbib}
+\usepackage{algorithm}
+\usepackage[noend]{algorithmic}
+\usepackage[colorlinks=true,linkcolor=red,citecolor=blue,urlcolor=red]{hyperref}
+\hyphenpenalty=5000
+\tolerance=1000
+\usepackage{caption}
+\usepackage{theorem}
+\newtheorem{example}{Example}
+\newtheorem{definition}{Definition}
+\newtheorem{lemma}{Lemma}
+\newtheorem{proof}{Proof}
+\newtheorem{theorem}{Theorem}
+%\usepackage{xcolor}
+%\pagecolor[rgb]{0.9, 0.99, 0.9}
+\usepackage{float}
+
+\begin{document}
+\begin{frontmatter}	
+	
+\title{Differentially Private Publication of Streaming Trajectory Data}
+
+%\author[mymainaddress]{Xiaofeng Ding\corref{cor2}}
+\author[mymainaddress]{Xiaofeng Ding}
+%\ead{xfding@hust.edu.cn}
+
+\author[mymainaddress]{Wenxiang Zhou}
+
+\author[mymainaddress]{Shujun Sheng}
+
+\author[mysecondaryaddress]{Zhifeng Bao}
+
+\author[mythirdaddress]{Raymond Choo}
+
+%\author[mymainaddress]{Hanhua Chen}
+%\ead{xlwang@xmu.edu.cn}
+
+\author[mymainaddress]{Hai Jin}
+
+\address[mymainaddress]{National Engineering Research Center for Big Data Technology and System\\Service Computing Technology and System Lab, Cluster and Grid Computing Lab \\ School of Computer Science and Technology, Huazhong University of Science and Technology, Wuhan, China}
+\address[mysecondaryaddress]{School of Computer Science and Information Tech, RMIT University, Australia}
+\address[mythirdaddress]{Department of Information Systems and Cyber Security, University of Texas at San Antonio, USA}
+%\cortext[cor1]{Corresponding author} 
+%\cortext[cor2]{Principal corresponding author}
+
+
+%\maketitle {\color{red}{(please confirm if this is right) }
+	
+\begin{abstract}\label{abstract}User-generated trajectories (e.g. during traveling) can be leveraged to offer value-added services (e.g. smart city policy formulation), but there are also privacy implications. For example, information about the routes or destinations obtained from such published trajectories can be used to profile and identify users. Meanwhile, the existing trajectory publishing algorithms mainly rely on batch processing platforms, and rarely pay attention to real-time privacy protection processing in streaming scenarios. Motivated by these, we propose a stream processing framework containing two modules for spatio-temporal data. And this framework aims to achieve high data utility while effectively ensuring the preservation of privacy in the published results. The first module is TSP, which concurrently receives real-time queries from individuals and releases new sanitizing trajectories. The second module is VCR. Several algorithms based on differential privacy in this module can help us to publish the distribution of position statistics more conveniently. Our experiments on real-world trajectory datasets demonstrate that our framework can effectively guarantee privacy with high data utility, when appropriate parameter configuration is chosen. In addition, at the same level of privacy protection, the data accuracy of our proposed visitor count releasing algorithm is better than the state-of-the-art approach. 
+\end{abstract}
+
+\begin{keyword}
+	 Trajectory publishing\sep Tuple generalizing \sep Hierarchical grid \sep Differential privacy	
+\end{keyword}	
+\end{frontmatter}
+	
+\section{Introduction}
+As the number and range of location-aware devices increase, so does the amount of user-based mobile trajectory data. Such data can be analyzed using techniques such as trajectory pattern mining (see \cite{hung2015clustering,shang2018dita}) and trajectory clustering analysis (see \cite{su2015making,zhang2018trajectory,zhang2019clustering}) for a broad range of applications (e.g. smart city planning). For example, some provider can provide service recommendations (e.g. restaurants) for individuals based on their current position and trajectory. 
+
+Trajectory data contains rich and potentially revealing information about the users, there are clearly privacy implications by publishing trajectory data without having in place some privacy protection mechanisms \cite{chen2011differentially,clarke2001person} or even if the private data has been anonymized \cite{douriez2016anonymizing,gedik2005location}. The following are two such simple examples: 
+\begin{example} A server is constantly collecting position information of people. As shown in Figure \ref{table_1}, streaming tuples received by the server consist of user's id, timestamp, and coordinate information. If a user $u_1$ wishes to query the trajectory (s)he is generating, the server will output the collected streaming tuples in sequence (see Figure \ref{fig_route}). However, once an attacker intercepts such results without privacy protection, he can clearly ﬁnd that $u_1$ was staying in the same place (dermatology hospital) over a period of time. Then, he will identify that $u_1$ was in the hospital with a high probability at that time. Obviously, an irrational trajectory releasing method will reveal users' sensitive location information (e.g., staying in a particular venue like hospital or military installation), thereby exposing potential privacy and security (e.g. physical and national) issues.
+
+% However, such output can be intecepted or sniffed by an attacker (see Figure \ref{fig_route}), which can then be used to determine that $u_1$ had been staying in a particular venue (e.g. hospital or military installation) over a period of time. There are clearly privacy, and potentially security (e.g. physical and national) concerns. 
+
+\label{ex_1}
+\end{example}
+
+
+\begin{figure}[htbp]
+\setlength{\abovecaptionskip}{0.1cm}
+\centering
+\subfigure[Tuples collected by the server]{
+\label{table_1}
+\includegraphics[width=3.5cm,height=1.12in]{figs//newtable.png}
+
+}
+\quad
+\subfigure[Published trajectories]{
+\label{fig_route}
+\includegraphics[width=4.45cm,height=1.12in]{figs//tracks.pdf}
+
+}
+\caption{Example for trajectory publication}
+\label{fig_example1}
+\end{figure}
+
+
+\begin{example}
+As shown in Figure \ref{ex2_1}, the server collects latitude-longitude coordinate data, which are generated by each user over a period of time, and converts each of them into a specific region. 
+Then, the server counts the number of visitors per region and publishes a statistical histogram about  visitor count distribution (see Figure  \ref{ex2_2}) to the public. From this histogram, we can clearly see how many regions have been visited by $x$ visitors in any time period. Let us assume that an attacker knows the whereabouts of everyone in Figure \ref{ex2_1} with the exception of $u_6$, and the attacker wishes to know where $u_6$ (say Alan) had been in a particular time period. Based on the published visitor count distribution histogram and other background information (e.g. open source intelligence -- OSINT, such as those obtained from social media), the attacker found out that region $F$ had been accessed by five different users. Since this attacker knew that $u_1$, $u_2$, $u_3$, $u_4$ had been to that region, except for $u_5$, the attacker can easily infer that Alan has traveled to region $F$. Furthermore, the attacker can also easily infer that Alan had passed through region $C$, since region $D$ had been visited by $u_4$ and $u_5$, region $C$ had been visited only by $u_5$, while both regions $C$ and $D$ had been accessed by two different users. Therefore, the attacker can infer easily that Alan had accessed regions $C$ and $F$, even though the former knows nothing about Alan's whereabouts. 
+\end{example}
+
+\begin{figure}[htbp]
+\setlength{\abovecaptionskip}{0.1cm}
+\centering
+\subfigure[Regions visited by users]{
+\label{ex2_1}
+\includegraphics[width=3.5cm,height=1.15in]{figs//ex2_f_1.pdf}
+
+}
+\quad
+\subfigure[Distribution of visitor count]{
+\label{ex2_2}
+\includegraphics[width=4.08cm,height=1.15in]{figs//ex2_f_2.pdf}
+
+}
+\caption{Example for position statistics publication. According to Figure \ref{ex2_1}, regions $A$ to $F$ were accessed by 3, 3, 2, 2, 3, 5 and 1 visitors respectively. So, there are 1, 2, 3, 0, 1 regions corresponding to visitor count from 1 to 5, as shown in Figure \ref{ex2_2}.}
+\label{fig_example2}
+\end{figure}
+
+Using these two examples, it is trivial to note that anyone can profile and potentially accurately identify users by analyzing raw published trajectories and statistical histogram data. Thus, in this paper we seek to design an efficient mechanism to publish streaming trajectory in real-time, while preserving the privacy of the users whose data is being published. Meanwhile, at the time of this research, there is no prior work designed to achieve privacy preserving real-time publication of statistical histogram for streaming position data. Specifically, we demonstrate how we can ensure users' privacy  while releasing their streaming trajectories and statistical histogram of the position data. To achieve the previous problem, we propose TSP, a trajectory stream publishing framework based on adaptive privacy budget allocation, while enable the published trajectory to satisfy privacy requirements of different users. We also design two novel algorithms for histogram publication based on differential privacy, in order to publish visitor count distribution with a certain privacy protection guarantee. 
+
+Our contributions can be summarized as follows: 
+\begin{itemize}
+\item 
+We study the problem of privacy preserving trajectory and propose a novel trajectory stream publishing framework (TSP), based on the model of $k_t$-trajectory privacy. We adaptively allocate privacy budget to two key components based on the privacy requirements of different users. This is the first study to publish a privacy-protected streaming trajectories based on real-time queries of individuals.
+\item 
+We propose two novel histogram publishing algorithms based on differential privacy, to facilitate the public release of visitor count distribution. In addition, we prove the global sensitivity for each algorithm.
+
+\item
+We then conduct comprehensive experiments over three real-world datasets, and perform a comparison to determine the best strategy to achieve a balance between utility and privacy when releasing synthetic trajectories and visitor count distribution histograms.
+
+\end{itemize}
+In the next section, we will briefly review the related literature.
+
+\section{Related Work}
+There have been a number of published privacy-preserving techniques to facilitate trajectory publication in recent years \cite{bindschaedler2016synthesizing,gursoy2018differentially}, and these techniques can be broadly categorized into those that facilitate anonymous release and those that use data perturbation. The former category of technique is used for publishing trajectory which cannot be distinguished from each other, and the latter category, particularly those based on differential privacy (DP), focuses on publishing statistical features of trajectory data. 
+For example, in \cite{xu2013differentially,zhang2014towards}, noises are added to the distribution histograms that satisfy differential privacy.
+
+{\bfseries  Trajectory anonymization.} Conventional trajectory privacy protection methods are based on \emph{k}-anonymity \cite{sweeney2002k} and its extensions. The core idea of $k$-anonymity technology is to generalize sensitive attributes and make a single record indistinguishable from other $k-1$ records for data privacy protection.
+Since then, many other approaches based on $k$-anonymity have been proposed. For example, $(\emph{k},\delta)$-anonymity \cite{abul2008never},
+proposed by Abul, ensures that at least $k-1$ trajectories with higher similarity exist in the range of the cylinder radius $ \delta  $ for each trajectory. However, such approaches have a common drawback in the sense that they cannot resist background knowledge attacks and homogeneity attacks \cite{douriez2016anonymizing,gedik2005location}, both of which are commonplace (also described in our examples in the preceding section). There have also been approaches based on  l-diversity \cite{Machanavajjhala2006L} and t-closeness  \cite{Li2007t}, which can protect relationships between  records in the dataset. Chen et al. \cite{chen2013privacy}, for example, adopted $(K,C)_{L}$-privacy model to prevent identity linkage and sensitive attribute disclosure attacks on trajectory data. 
+%Yarovoy et al. present a novel notion of \emph{k}-anonymity based on trajectory data \cite{yarovoy2009anonymizing}. That is, they consider timestamps as the quasi-identifying information.
+Yarovoy et al. \cite{yarovoy2009anonymizing} considered timestamps as the quasi-identifying information and presented the notion of \emph{k}-anonymity based on trajectory data. In order to defend against privacy attack (that is based on the trajectories), they proposed a Hilbert indexing method and reportedly achieved better results.
+
+{\bfseries  Trajectory with DP.} DP, first proposed by Dwork \cite{dwork2008differential}, adds noise to the original data or the statistical results to achieve privacy protection. If we have two datasets which differ only by one record, the privacy of that record cannot be disclosed even if the attacker already has information about all the other records (except the targeted record). Hence, DP has emerged as a widely accepted standard for privacy preserving data publishing. Existing DP-based approaches are generally designed to facilitate spatio-temporal data release, by using DP publication of statistics or DP release of trajectory data. For the first category, most approaches focus on publishing statistics which answer count queries for spatial data. Gergely et al. \cite{acs2014case}, for example, demonstrated how one can publish urban spatio-temporal densities utilizing phone records. 
+Yang et al. \cite{cao2015differentially} proposed a flexible privacy model to ensure each desired length of trajectory for stream aggregate publication while reducing privacy cost.  
+
+
+In this paper, we propose visitor count distribution publishing algorithms for streaming position data, unlike other approaches in the literature.
+
+There have also been other recent works devoted to adressing the challenge of releasing trajectories using DP.  
+Chen et al. \cite{chen2011differentially}, for example, applied DP to release spatio-temporal data by utilizing a noisy prefix tree to group sequences with the same prefix into the same branch. In a later work, they extended the above approach using a variable-length \emph{n}-gram model \cite{chen2012differentially} to clean up the general sequential data. Hua et al. \cite{hua2015differentially} proposed a DP position generalization algorithm, 
+which uses an exponential mechanism to probabilistically combine positions on each timestamp. However, they assumed that all users have the same privacy requirements and provide the same level of privacy protection for all individuals. To sum up, these algorithms only consider privacy protection of trajectories stored in the database, rather than trajectories release of real-time queries in the streaming environment. Also, they do not provide personalized privacy protection for different users. These are the limitations we focus on addressing in this paper.
+
+
+%\section{PRELIMINARIES}
+\section{Preliminaries}
+% Here, we will present the definitions and properties of DP in Section \ref{sub3_1}, the privacy model and problem statement in Section \ref{sub3_2}, and the prefix tree model used in our preprocessing step in Section \ref{sub3_3}.
+
+We summarize the notation of the paper in Table \ref{tab:1}. And then the basic concepts and models are given below.
+\begin{table}
+		% table caption is above the table
+		\centering
+		\caption{Summary of Notations}
+		\label{tab:1}       % Give a unique label
+		% For LaTeX tables use
+		\begin{tabular}{|p{15mm}|p{65mm}|}
+			\hline
+			{\bfseries Notation} & {\bfseries Description}  \\
+			\hline
+			$k$ & number of segments of trajectory \\
+ 			$x$$<$$p,j,u>$ & a tuple $x$ with position $p$, user $u$, timestamp $j$. \\
+ 			$p\_x$ & s \\
+ 			% $x$$<$$l,j,u>$ & a tuple x with position $p$ of user $u$ at timestamp $j$. \\
+			$\Psi$ & hierarchical coordinate system \\
+			$P_{x,i}$ & position string of tuple $x$ on the i-level grid \\
+			$PT_i$& prefix tree in i-th time period \\
+			$PT[x]$ & the value of pair with key='$x$' in the tree $PT$\\
+			\hline
+		\end{tabular}
+	\end{table}
+
+\subsection{Differential Privacy (DP)} 
+\label{sub3_1}
+
+DP has several evaluation methods that quantify individual risks and provable privacy definitions. It can be defined as follows:
+
+\begin{definition} ($\epsilon$-Differential Privacy) 
+Define A to be a randomized algorithm satisfies $\epsilon$-Differential Privacy ($\epsilon$-DP), if for any two neighboring databases $D_1$ and $D_2$ differing in one record, and all possible outcomes $S \subseteq   Range(A)$, where Range(A) represents the output range of A, we have 
+
+%A randomized algorithm $A$ satisfies $\epsilon$-Differential Privacy ($\epsilon$-DP), if for any two neighboring databases $D_1$ and $D_2$ differing in one record, and all possible outcomes $S$ in the output space $Range(A)$, we have
+\begin{equation}
+\frac{Pr[A(D_1)=S]}{Pr[A(D_2)=S]} \leq e^\epsilon
+\end{equation}
+In the above equation, $\epsilon$ is a parameter that quantifies the level of privacy protection for the result.
+\label{Def1}
+\end{definition}
+
+
+The global sensitivity is defined to represent the largest difference between these two neighboring databases.
+
+\begin{definition} (Global Sensitivity) For two neighboring \\
+databases $D_1$, $D_2$, and a query $f : D \rightarrow R^d$, the global sensitivity is:
+
+\begin{equation}
+f = \mathop{\max}\limits_{D_1, D_2} ||f(D_1) - f(D_2)||_1
+\label{eq:dp}
+\end{equation}
+
+\end{definition}
+
+
+\begin{definition} (Laplace Mechanism) To satisfy DP, appropriate random noise is added to the output of the query before it is released. 
+We use the Laplace mechanism \cite{dwork2006calibrating} to satisfy $\epsilon$-DP: 
+
+\begin{equation}
+A(D) = f(D) + Lap(\frac{\Delta f}{\epsilon}) 
+\label{eq:dp}
+\end{equation}
+
+\end{definition}
+
+\begin{definition} (Exponential Mechanism) Let $M$ be a randomized algorithm that takes dataset $D$ as input and entity $r_i$ as output.
+Besides, $q(D, r_i)$ is the quality score, and $\Delta$q is the sensitivity of the quality function. 
+If $M$ selects and outputs $r_i \in  R$ with a probability proportional to $exp(\frac{\epsilon q (D,r_i)}{2 \Delta q})$, then we say that $M$ satisfies $\epsilon$-DP \cite{mcsherry2007mechanism}.
+\end{definition}
+
+\begin{definition} (Composition Properties) Let an algorithm $A$ runs $n$ randomized algorithms $A_1, A_2,..,A_n$, and each $A_i(1\leq i \leq n) $ satisfies $\epsilon_i$-DP. 
+\begin{itemize}
+\item
+
+{\bfseries Sequential Composition.} Publishing the output $A(D)= <A_1(D), A_2(D), \ldots, A_n(D)>$ satisfies ($\sum_{i=1}^{n} \epsilon_i $)-DP.
+\item
+{\bfseries Immunity to Post-processing.} Calculating the output function of the DP algorithm does not worsen privacy. That is, publishing the output of $A_i(D)$ or using it as an input of the next algorithm does not violate $\epsilon_i$-DP \cite{gursoy2018differentially}.
+\end{itemize}
+\end{definition}
+
+\begin{figure*}[thbp]
+\captionsetup[figure]{labelfont=bf,textfont=it}
+\centering
+\subfigure[hierarchical coordinate system]{
+\includegraphics[width=5.1cm,height=1.35in]{figs//grid.png}
+\label{grid}
+%\caption{fig1}
+}
+\quad
+\subfigure[Before insert operation]{
+\includegraphics[width=5.4cm,height=1.35in]{figs//tree1.pdf}
+\label{tree_1}
+%\caption{fig1}
+}
+\quad
+\subfigure[After insert operation]{
+\includegraphics[width=5.8cm,height=1.35in]{figs//tree2.pdf}
+\label{tree_2}
+}
+
+\caption{An example of prefix tree.\textmd{ Assume the current prefix tree $Pt$ is shown in Figure \ref{tree_1}. And then $u_1$ uploads coordinate (39.8209, 116.4404) and $u_2$ uploads coordinate (39.7802, 116.4627) at this timestamp. The server converts their coordinates into \{'j', 'je', 'jed'\} and \{'j', 'jg', 'jgc'\} respectively according to the Geohash algorithm and the hierarchical coordinate system $\Psi$ (shown in Figure \ref{grid}). The value of the key-value pair of nodes $v_4$, $v_5$, $v_7$, $v_8$ will increase by one, while the value of the key-value pair of node $v_1$ will increase by two. Finally, we acquire an updated prefix tree as shown in Figure \ref{tree_2}.}}
+
+
+% will increase by 1. The key-value pair of these nodes $<$'je', 200$>$, $<$'jg', 100$>$, $<$'jed', 20$>$, $<$'jgc', 30$>$ will increase by one, while the node <'j', 700> will increase by two. Finally, we have an updated prefix tree as shown in Figure \ref{tree_2}.}}
+\setlength{\belowcaptionskip}{0cm}
+\label{fig_tree}
+\end{figure*}
+
+\subsection {Privacy Model and Problem Statement}
+\label{sub3_2}
+
+
+The server collects tuples from an infinite stream $S$.
+According to the time window of size $t$, the stream from the start to the current time point is divided into $k$ segments. 
+Each segment represents a database $D_i$ which consists of a series of tuples with spatio-temporal information.
+A tuple is a triple denoted by $<p,j,u>$, where $p$ stands for position coordinates of individual $u$ at timestamp $j$.
+We define that this prefix stream $S$ represents a \emph{$k_t-$streaming trajectory} and \emph{$S[i]$} = $D_i$ , $i \in [1, k] $. 
+The larger the value of $i$, the closer this database $D_i$ is to the current time point.
+
+When releasing the trajectories, people tend to care about the position information of the most recent period.
+Meanwhile, different users have different privacy requirements for their self-generated trajectories. 
+Combined with the above challenges, we desire to generate synthetic trajectories for users' personalized queries while achieving DP. 
+To this end, we propose a privacy model called \emph{$k_t-$trajectory privacy}, which is defined as follows: 
+
+\begin{definition} ($k_t-$Trajectory Privacy)
+Let $M$ be a mechanism that takes a \emph{$k_t-$streaming trajectory} as input and a synthetic trajectory $T$ as output. 
+We say that $M$ satisfies $k_t-$trajectory privacy if for any two prefix streams $S$ and $S^{'}$ that differ by only one user's information, the following holds:
+
+\begin{equation}
+\frac{Pr[M(S)=T]}{Pr[M(S^{'})=T]} \leq e^\epsilon
+\end{equation}
+
+\end{definition}
+
+In \cite{kellaris2014differentially}, the authors put forth a novel notion of w-event privacy over infinite streams, which protects any event sequence occurring in $w$ successive time instants.
+Similar to the privacy model above, we present a variant of the theorem, as follows:
+
+\begin{theorem} Let M be a mechanism which takes a $k_t-$streaming trajectory as input, with the outputs being a set of $o \in O$.
+The mechanism M consists of k sub-mechanisms represented as {$M_1$,\ldots,$M_k$}. 
+Each mechanism operates on $S_{t}[i] = D_i$ respectively with independent randomness, 
+and each $M_i$ satisfies $\epsilon_{i}$-differential privacy. Then, mechanism M satisfies $k_t-$trajectory privacy if \,
+${\sum_{i=1}^{k}\epsilon_{i}}$ $\leq$ $\epsilon$. 
+
+%\begin{equation}
+%{\sum_{i=1}^{k}\epsilon_{i}} \leq \epsilon
+%\label{eqb}
+%\end{equation}
+%
+\label{theorem_1}
+\end{theorem}
+
+For a trajectory with time window size $t$ and k segments, our \emph{$k_t-$trajectory privacy} ensures that the synthetic trajectory which we release satisfies DP protection. 
+
+
+In addition, it is desirable to generate and publish a well privacy-protected visitor count distribution based on the position dataset $D_i$ in each time window $i$. That is to say, we release the distribution histogram which can be described as the answer of the query: how many regions are there in this time window $i$ such that each of them has the same number $x$ of visitors? Note that $i$ is the $i^{th}$ time window in the trajectory stream $S$, and $x$ is the visitor counts in the regions. In other words, our goal is to make it computationally challenging for an attacker to re-identify private information of users from their trajectories and statistics we published, and ensure that the published statistical characteristics of the distribution are similar to those of the real distribution.
+
+
+
+\subsection {Prefix Tree Based on Hierarchical Coordinate System}
+\label{sub3_3}
+
+Geohash is an address encoding algorithm that converts two-dimensional longitude and latitude coordinates into strings \cite{armenatzoglou2013general}. 
+Each string represents a rectangular region, in which all the coordinate points represented by latitude and longitude share the same Geohash string. Also, the longer the string, the more accurate the range it represents. In this work, we have made some improvements to the Geohash algorithm: (i) Reduce the scope of the Geohash algorithm from the earth plane to the coordinate range of the current dataset, thereby improving the accuracy of the position encoding conversion. (ii) The number of sub-rectangles contained in each rectangular region is reduced to 9, instead of 32 in the original algorithm, thus facilitate division of the hierarchical structure.
+
+
+In this paper, we construct a coordinate system based on a hierarchical grid using the Geohash algorithm (see Figure \ref{grid}). First, the 2D plane where tuple stream is located is uniformly decomposed into 9 grids, and then finer-grained grids are recursively divided among these coarse-grained grids. We denote $\Psi_{lv}$ as such a hierarchical coordinate system, where $lv$ represents the hierarchical level of the grid in this system. In other words, the higher the level of hierarchy, the finer the granularity of the grids. We quantify this hierarchical level so that it satisfies $lv = |P_{x,i}|$, where $P_{x,i}$ refers to the position string of the tuple $x$ on the i-th level grid transformed by the Geohash algorithm.
+
+For the incoming tuple stream in each time period, we build a prefix hierarchical tree based on our hierarchical coordinate system. There are several characteristics in this prefix tree: (i) The root denoted by $\$$ indicates the beginning of this coordinate system. (ii) Each non-leaf node has 9 children, each of which contains a key-value pair: a geohash-encoded string of the grid and its visitor count. (iii) Each non-root node $v$ has a parent $par(v)$, which respectively correspond to the grid in the coordinate system and the upper grid that contains it. Obviously, all nodes with a depth $lv$ correspond to all the grids in the coordinate system $\Psi_{lv}$, and the depth of the prefix tree depends on the finest grained coordinate system we define. 
+
+In each time period, this prefix tree intuitively stores information about multiple grids with different granularities and the number of visitors, which is beneficial to the design of our following algorithm.
+In Figure \ref{fig_tree}, we present an example of constructing a hierarchical prefix tree. According to the Geohash algorithm and the hierarchical coordinate system $\Psi$, we convert the coordinates of these streaming tuples into strings corresponding to each hierarchy.
+
+%\section{Proposed Framework}
+
+
+
+\begin{figure}
+\includegraphics[height=2.0in,
+width=3.45in]{figs//flower.pdf}
+\caption{Architecture of framework}
+\label{fig_relation}
+\end{figure}
+
+
+
+\section{Architecture of Proposed Framework}
+In this section, we briefly describe system architecture of our stream processing framework, which is designed for privacy publishing of spatio-temporal data. 
+As shown in Figure \ref{fig_relation}, this framework consists of two main modules, namely: TSP (trajectory stream publishing) and VCR (visitor count releasing). 
+We assume that the framework continuously collects latitude-longitude coordinate data generated by each user in real time. 
+After the preprocessing step (mainly data cleaning, in order to remove irrelevant data, duplicate data or outliers in the original data stream), 
+our framework will build a prefix tree for each time period. Next, we perform operations of trajectory releasing and position statistics publishing through two parallel modules respectively. Among them, TSP takes the pre-processed streaming tuples and prefix trees as input, and then constantly monitors individual trajectory queries and then feeds back the privacy-preserving trajectory results in real time. Meanwhile, the generated prefix trees also greatly facilitate the calculation of position statistics distributions in the VCR module. Due to the periodic character of VCR releases, it performs as a daemon in the background.
+
+\begin{enumerate}
+    \item \textbf{TSP.} TSP contains two key components: TG (Tuple Generalizing) and TM (Tuple Merging). First, TG samples the tuples in each segment of \emph{$k_t-$streaming trajectory} respectively according to different probabilities, 
+and then uses differential privacy exponential mechanism \cite{mcsherry2007mechanism} to generalize these coordinates into their respective corresponding grids. Considering the risk of privacy disclosure similar to Example \ref{ex_1}, people desire that each position constituting the composite trajectory is located in different regions. To this end, TM merges the positions that appear in the same grid of the road network, and then returns such a synthetic trajectory that satisfies DP.
+
+    \item \textbf{VCR.} Unlike the previous module, VCR periodically aggregates the stream tuples collected in real-time, and then publishes a noisy visitor count distribution by adding noises to the original histogram.  There are three different histogram publishing algorithms for visitor count distribution in VCR. Among them, $H^t$-$publication$ is our baseline histogram, and $CH^t$-$publication$ is the corresponding publishing algorithm for the cumulative version of the histogram generated by the former. $AG_n$-$publication$ is a novel group publishing algorithm which can adaptively select the appropriate grouping interval for visitor count histogram publishing. 
+\end{enumerate}
+
+
+
+\section{The Proposed Module TSP}
+
+In this section, we present TSP, which is a novel privacy-preserving trajectory releasing module according to the real-time queries of individuals.
+We first show outline our module, before describing each of its two main components in detail. Finally, we prove that TSP satisfies $\epsilon$-DP.
+
+% In this section, we present TSP, which is a novel privacy-preserving trajectory publishing framework according to the real-time queries of individuals.
+% We first show outline our framework, before describing each of its two main components. Finally, we prove that the framework TSP satisfies $\epsilon$-DP. As shown in Figure \ref{fig_relation}, the input of our proposed visitor count releasing (VCR) algorithms is not the output of framework TSP. VCR performs as a daemon in the background. Therefore, they are executed in parallel: for the same streaming tuples, TSP performs trajectory processing and publishing for real-time requests from different users, while our VCR algorithms count all users' position tuples and publish the statistics in each time window. 
+
+%
+\subsection{Overview}
+%
+
+We address the challenge of releasing individual trajectory by sampling the tuples collected by the server in different time window and then generalizing them. 
+It avoids the leakage of user's position privacy since the positions in the trajectory have been generalized. 
+Specifically, our TSP consists of two key components, each of which provides respective DP guarantee. 
+
+{\bfseries Tuple Generalizing.} 
+Specifically, we sample the tuples in each segment of \emph{$k_t-$streaming trajectory} respectively according to different probabilities and get a shorter trajectory.   
+Then, we use the idea of the differential privacy exponential mechanism \cite{mcsherry2007mechanism} to generalize these coordinates into their respective corresponding grids. 
+By doing this, we blur the position information of each tuple but ensure the data utility.
+
+{\bfseries Tuple Merging.} 
+Suppose that individuals worry about position disclosure in Example \ref{ex_1}, and do not want some positions of their trajectories to appear in the same region.
+In other words, they request all the positions along the synthetic trajectories to be in different grids of the road network. 
+% To this end, we merge the position points in the trajectory with privacy budget, and acquire the synthetic trajectory that satisfies differential privacy.
+To this end, we merge the tuples located in the same partitioned grids and then obtain a synthetic trajectory that satisfies DP.
+
+%
+\subsection{Tuple Generalizing}
+%
+The GPS positions of moving objects are updated frequently. For example, each vehicle uploads its position to the server of Didi in every 2 to 4 seconds. Therefore, we need to reduce the number of tuples in the data stream to improve processing efficiency through sampling operations.
+% Tuple Generalizing includes two sequential operations.
+% For each time window, we execute the operation of tuple sampling with different probabilities, and then select the corresponding grid for each tuple.
+At first, we employ the sampling mechanism of DP \cite{li2012sampling} to reduce consumption on privacy budget.  
+
+\begin{theorem}
+\label{theorem_sample}
+\cite{li2012sampling} Let $M$ be a mechanism which provides $\epsilon$-DP. Define the mechanism $M^{'}$ as follows:
+\begin{itemize}
+    \item [1)] 
+Sample tuples in dataset $D$ with probability $P$, 
+then acquire a new dataset $D_{s}$. 
+    \item [2)] 
+Execute $M$ on $D_{s}$.
+\end{itemize}
+Then the mechanism $M^{'}$ satisfies $\ln(P*e^{\epsilon}+1-{P})$-DP. 
+\end{theorem}
+
+\begin{algorithm}[ht]
+	\caption{TG} \label{algo1} %算法的名字
+	\small
+	\begin{algorithmic}[1]
+		\REQUIRE  Time window size $t$, a privacy budget $\epsilon_{a}$, tuple stream $S$, and a prefix tree list $TL$ \\ 
+           \ENSURE  A series of trajectory datasets $<D_{1}^{'},\ldots,D_{k}^{'}>$
+         \STATE Divide $S$ into $k$ segments by $t$, denoted as $D$ = $<D_{1},\ldots,D_{k}>$;    
+	    \STATE  Initialize $D^{'}$=$<D_{1}^{'},\ldots,D_{k}^{'}>$, $s \leftarrow \frac{3\epsilon_{a}}{2k}$;
+\STATE \textbf{for} $i = 1 \rightarrow k$ \textbf{do} % For 语句，需要和EndFor对应
+\STATE ~~~~$\epsilon_{a,i}$ $\leftarrow$ $\ln(1+\sqrt{{(exp(\frac{ \epsilon_a(k+2i-3)}{2k(k-1)})-1)}{   (e^{s} -1)                 }})$;
+\STATE ~~~~$D_{i}^{'}$ $\leftarrow$  Sample tuples in $D_{i}$ with probability $P_i$= $\frac{e^{\epsilon_{a,i}} - 1}{e^{s} - 1}$;
+\STATE ~~~~$PT_i$ $\leftarrow$  $mergeTrees(TL,i)$;
+% \STATE ~~~~$D_{i}^{''}$ $\leftarrow$ $Tuple \,\, Generalizing\,$($D_{i}^{'}$ , $PT_i$, $\epsilon_{a,i}$);
+\STATE ~~~~\textbf{for all} tuples $ x \in D^{'}_i$ \textbf{do}
+\STATE ~~~~~~~~\textbf{for all} $r \in \Psi $  \textbf{do}
+\STATE ~~~~~~~~~~~~$q(D^{'}_{i},r) \leftarrow PT_{i}[r] * e^{-\alpha*\Delta dis(x,r)}$;
+\STATE ~~~~~~~~$r_j \leftarrow$ Select a grid $r_j$$\in\Psi$ by Pr: 
+$\frac {exp(\frac{q(D^{'}_{i},r_j)\epsilon_{a,i}}{2})}{\sum_{r\in \Psi}exp(\frac{q(D^{'}_{i},r)\epsilon_{a,i}}{2})}$;
+\STATE ~~~~~~~~Replace position of $x$ with $r_j$ and update $D^{'}_{i} \leftarrow D^{'}_{i} \cup \{x\}$;
+\STATE \textbf{return}  $D^{'} = <D_{1}^{'},\ldots,D_{k}^{'}>$
+
+\end{algorithmic}
+\end{algorithm}
+
+By disturbing and blurring all original positions, we ensure the utility of data while avoiding the leakage of individuals' position privacy. 
+
+%Now we present the algorithms of our model TSP. 
+%Algorithm \ref{algo1} is called TG for short. 
+The pseudo-code of TG (Tuple Generalizing) is as shown in Algorithm \ref{algo1}. 
+The system takes prefix tree list $TL$ and pre-processed tuple stream $S$ as inputs. 
+% When people desire to query their respective trajectories generated so far, the system takes prefix tree list $TL$ and pre-processed tuple stream $S$ as inputs. 
+At the beginning, TG divides $S$ into $k$ successive segments by time window size $t$ (line 1), each of them is represented as $D_i$, $i \in [1,k]$. 
+Then, TG allocates privacy budget $\epsilon_{a,i}$ to each segment (line 4), and then uses sampling mechanism to sample tuples with a certain probability (line 5). 
+In line 6, TS merges all trees in $TL$ which located in this time segment $i$ by $mergeTrees(TL,i)$, and then obtains a prefix tree $PT_i$ to facilitate the calculation of the weight score. 
+For each tuple $x$ in $D_{i}^{'}$, after a series of operations, we generate a new position of the tuple which had been generalized. And then we replace original coordinate of the tuple with this new one (line 11).
+To be more specific, for each grid with position $r$ (converted by Geohash) in the position domain $\Psi$ (line 8), we calculate the result that multiplying $PT[r]$ by the weight $e^{-a*\Delta dis(x,r)}$, and regard this result as the quality score $q(D^{'}_{i},r)$ of exponential mechanism (line 9). 
+Note that $PT[r]$ represents the value of pair with key='r' in $PT$, i.e., the number of visitors in this grid $r$. $\Delta dis(x,r)$ is the grid spacing from from $r$ to $x$. 
+In general, $\alpha$ is a constant less than 1, which is determined by the area of the position domain $\Psi$. The smaller the value of $\alpha$, the slower the rate at which the weight decreases due to the grid spacing.
+Next, TG uses exponential mechanism to select a candidate grid following the probability (line 10), 
+and then returns this grid as the new position we desire.
+Fianlly, TG generates a new synthetic trajectory and outputs the results of new dataset $D^{'} = < D_{1}^{'},\ldots,D_{k}^{'} >$ (line 12). 
+
+\begin{lemma} 
+\label{lemma_2}
+%The Tuple Sampling and Generalizing algorithm satisfies $\epsilon_a$-differentially private.
+
+The algorithm TG satisfies $k_t-$trajectory privacy.
+
+\end{lemma}
+
+\begin{proof}
+
+%In Algorithm \ref{algo2}, the quality score $q(D_{i}^{'},r_j)$ is calculated by occurrences of each region . 
+In Algorithm \ref{algo1}, the quality score $q(D_{i}^{'},r)$ is derived by multiplying the number of visitors in each grid by the weight $e^{-a*\Delta dis(x,r)}$. 
+Thus the absence of one tuple will cause a difference of region count, 
+and the global sensitivity of the score $\Delta$q is 1. 
+% And then TG uses exponential mechanism in each segment $D_{i}^{'}, i\in[1,k]$ and satisfies $\epsilon_{a,i}$-DP respectively. 
+We suppose that we directly use the exponential mechanism to generalize each tuple in the segments instead of sampling them at first (i.e., without line 5 in Algorithm \ref{algo1})).
+According to the statement above, each segment $D_{i}^{'}$ satisfies $\epsilon_{a,i}$-DP respectively. 
+Following the Theorem \ref{theorem_sample}, for Algorithm \ref{algo1}, if we run the sampling mechanism at first and then execute exponential mechanism 
+on each tuple which has been sampled, the output of our algorithm should satisfy 
+$\ln(\frac{e^{\epsilon_{a,i}}-1}{e^{t}-1} e^{\epsilon_{a,i}}+1 -  \frac{e^{\epsilon_{a,i}}-1}{e^{t}-1})$-DP. 
+Since $s$ and $\epsilon_{a,i}$ had been calculated in Algorithm \ref{algo1}, after the calculation, we get the value 
+$\ln(\frac{e^{\epsilon_{a,i}}-1}{e^{t}-1} e^{\epsilon_{a,i}}+1 -  \frac{e^{\epsilon_{a,i}}-1}{e^{t}-1}) $ = ${\frac{ \epsilon_a(k+2i-3)}{2k(k-1)}}$.
+That is to say, each segment $D_{i}^{'}$ of trajectory satisfies ${\frac{ \epsilon_a(k+2i-3)}{2k(k-1)}}$-DP. 
+According to Theorem \ref{theorem_1}, we find that the sum of all privacy budget consumed in these $k$ segments is $\sum_{i=1}^{k}\frac{ \epsilon_a(k+2i-3)}{2k(k-1)} = \epsilon_a $.
+Therefore, the algorithm TG satisfies $k_t-$trajectory privacy. \end{proof}
+
+%
+\subsection{Tuple Merging}
+%
+%Suppose that individuals worry about the position disclosure in Example \ref{ex_1}, and do not want some positions of their trajectories to appear in the same region.
+%In other word, they request all the positions along the synthetic trajectories to be in different regions.
+%By the operation above, we get the trajectory which is generated by sampling and disturbing the original positions. 
+%However, considering the issue mentioned in Example \ref{ex_1}, people do not want too many position points to appear in a region during a certain period of time.
+Considering the issue mentioned in Example \ref{ex_1}, 
+people prefer that all the positions along the synthetic trajectories to be in different regions. 
+Therefore, we present an algorithm called Tuple Merging to unite the positions in the trajectory.
+In this algorithm, we select the corresponding region according to user's privacy preference, 
+and merge the positions appearing in the region in each time window, 
+thereby reducing the leakage of the privacy information of the user's behavior pattern.
+
+%  Time window size $t$, a privacy budget $\epsilon_{a}$, tuple stream $S$, and a prefix tree list $TL$ \\ 
+
+%\textbf{
+\begin{algorithm}[h]
+\caption{TM} \label{algo3} %算法的名字
+%\small
+	\begin{algorithmic}[1]
+\REQUIRE $D^{'}$ = $<D_{1}^{'},\ldots,D_{k}^{'}>$, and a privacy budget $\epsilon_{b}$    \\
+\ENSURE A new trajectory $T$
+\STATE Initialize $<D_{1}^{*},\ldots,D_{k}^{*}>$, and get tuple merging level $v$;
+\STATE \textbf{for all} $D_{i}^{'} \in D^{'}$ \textbf{do}
+\STATE ~~~~Initialize a set $LR_{i}$;
+\STATE ~~~~\textbf{for all} {tuples $x \in D_{i}^{'}$}  \textbf{do}
+\STATE ~~~~~~~~$LR_i \leftarrow LR_i \cup \{P_{x,v}\}$;
+\STATE ~~~~\textbf{for all} $P_{j} \in LR_i$ \textbf{do}
+%\STATE ~~~~~~~~Initialize a dict $map$;  
+% \STATE ~~~~~~~~Initialize a dict $map = Impact(P_{j},D_{i}^{'})$;
+\STATE ~~~~~~~~$map = Impact(P_{j},D_{i}^{'})$;
+\STATE ~~~~~~~~\textbf{for all} {$r \in map$} \textbf{do}
+\STATE ~~~~~~~~~~~~$q(D^{'}_{i},r) \leftarrow map[r]$; 
+\STATE ~~~~~~~~$r_j \leftarrow$ Select a grid $r_j$$\in map$ by Pr:
+$\frac {exp(\frac{q(D^{'},r_j)\epsilon_{b}}{2})}{\sum_{r\in map}exp(\frac{q(D^{'},r)\epsilon_{b}}{2})}$;
+\STATE ~~~~~~~~Replace position of $x \in LR_i$ with $r_j$ and update $D^{*}_{i} \leftarrow D^{*}_{i} \cup \{x\}$
+% \STATE ~~~~~~~~Replace position of $x_i$ with $<x,y>$ and update $D^{'} \leftarrow D^{'} \cup \{x_i\}$
+\STATE Convert $<D_{1}^{*},\ldots,D_{k}^{*}>$ to $T$;
+\STATE \textbf{return} T
+% \STATE \textbf{return} $D^{*}$
+
+\end{algorithmic}
+\end{algorithm}
+
+Algorithm \ref{algo3} is called TM for short, which takes a privacy budget $\epsilon_{b}$ and the segments of trajectory generated by TG as inputs. 
+% Algorithm \ref{algo3} is called TM for short, which takes a privacy budget $\epsilon_{b}$ and the segments of trajectory generated by TG as inputs, and outputs the synthetic trajectory for user. 
+TM first uses Geohash algorithm to collect the large region which each tuple in the trajectory segment belongs. 
+This large region is also the parent of the node to which the tuple belongs in the prefix tree, and then added to a set $set$ (line 5 - line 6).
+For each large region, we use a function $Impact$ to calculate the number of times each sub-region (children of large region) is overridden by each tuple's neighbor regions (line 8 - line 9), 
+%because each tuple may generalize to one of its neighbor regions in this large region.
+since each sub-region in this large region is likely to be generalized to by the tuples in it.
+The overridden count of each sub-region in the large region is considered as the quality score $q(D,r)$ of exponential mechanism. This score represents the possibility of the sub-region being taken as the candidate position of the large region (line 10 - line 11).
+Then, we use the exponential mechanism to select one possible region following the probability (line 12). 
+The tuples in each large region are merged as one (line 13), which protects frequent patterns from exposure by users during trajectory publishing.
+Finally, TM publishes the trajectory where the positions have been merged to achieve different privacy preferences of individual (line 14).
+Since the quality score $q(D_{i}^{'},r_j)$ of each sub-region is calculated by the number of times they had been overridden by each tuple's neighoring regions, one tuple's variation will cause a difference of 1, and the global sensitivity of the score $\Delta$q is 1 too. 
+That is to say, TM uses exponential mechanism which satisfies $\epsilon_{b}$-differential privacy. 
+
+Since the privacy budget allocated to TM is $\epsilon_{b}$, %which had been allocated in the pre-process of the framework TSP in Section \ref{section_pre}.
+according to the framework we present, we draw the conclusion that: 
+%Hence, by the composition property [6], our solution satisfies ǫ-differential privacy as a whole, where ǫ = ǫ1 +ǫ2. 
+\begin{lemma}
+Our framework TSP satisfy $\epsilon$-Differential Privacy.
+\end{lemma}
+
+\begin{proof}
+
+TSP consists of two key components, TG and TM, which are executed in sequence. 
+TG has been proved to satisfy $k_t-$trajectory privacy, which achieves $\epsilon_{a}$-differential privacy, and TM satisfies $\epsilon_{b}$-differential privacy at the same time. Following the composition property of DP, we construct the output which satisfies $\epsilon$-differential privacy as a whole, where $\epsilon$ = $\epsilon_a$ + $\epsilon_b$. Hence, the process of trajectory generation in our model TSP satisfies $\epsilon$-DP. \end{proof}
+
+
+
+For any trajectory query issued by each user at any time point during the trip, our framework TSP guarantees that the synthetic trajectory meets the requirements of differential privacy, which provide a end-to-end privacy guarantee.
+
+
+
+\section{The Proposed Module VCR}
+\label{section_6}
+
+We first present two baseline algorithms based on DP to protect the privacy of the visitor count distribution we released in Section \ref{section_6_1}. 
+Then in Section \ref{section_5_2} we propose a grouping scheme, which is able to adjust the grouping strategy adaptively for visitor count distribution histogram publication.  
+Meanwhile, we have preprocessed the dataset T-drive to ensure that each user has a maximum of 1 position per minute.
+
+\subsection{Baseline Histograms} \label{section_6_1}
+
+In this section, we present a novel algorithm called $H^t$-$publication$ to publish visitor count distribution histogram, which visually shows the number of regions for each different number of visitors. 
+
+In Algorithm \ref{algo5}, we maintain a dict $countL$ to denote visitor counts for each region, initially set to be $\emptyset$ (line 1). 
+According to the time window size $t$ and the prefix tree list $TL=\{PT_1,\ldots,PT_t\}$, we calculate key-value pairs for all nodes in each $PT_i$. By accumulate values for all pairs of nodes with the same key, we then obtain the result $countL$ (line 2 - line 4). Note that $countL[x]$ is the number of users visited the region $x$. Finally, we compute the number of positions which had been visited by certain individuals (line 6), and then add noise to each bin of the distribution histogram (line 7). The noises we add are determined by the global sensitivity $2t$. 
+  
+\begin{algorithm}[ht]
+\caption{$H^t$-publication} \label{algo5}%算法的名字
+\small
+\begin{algorithmic}[1]
+\REQUIRE Time window size $t$, a privacy budget $\epsilon$, and a prefix tree list $TL$= $\{PT_1,\ldots,PT_t\}$      \\
+\ENSURE A noisy visitor count distribution $H^t$
+\STATE Initialize a dict $countL$;
+\STATE \textbf{for each} $PT_i \in TL$ \textbf{do}
+\STATE ~~~~\textbf{for all}  $node<key,value> \in PT_i$ \textbf{do}
+\STATE ~~~~~~~~$countL[key]+=value$;
+\STATE \textbf{for each}  $ i \in values(countL)$ \textbf{do}
+\STATE ~~~~$H_i\leftarrow$ Query: how many regions had been visited by $i$ users?
+\STATE ~~~~$H_i \leftarrow  H_i + Lap(2t/\epsilon)$;
+\STATE \textbf{return} $H^t$
+\end{algorithmic}
+\end{algorithm}
+
+
+
+\begin{lemma} 
+\label{lemma_hk}
+Given two databases $D$ and $D^{'}$ that differ by one individual's record in a stream $S$, we have
+
+\qquad \qquad  \qquad $|| H^{t}(D) - H^{t}(D^{'})||_{1} \leq 2t$
+
+\end{lemma}
+
+\begin{proof}
+Since two databases $D$ and $D^{'}$ differ by one individual's records and they all contain positions for $t$ timestamps, we assume that the individual is represented as $u_1$ and the collection of his/her positions is $Pos_1$. In the worst case, $u_1$ passes through $t$ different regions:   $Pos_1$ contains $t$ region positions that are different from each other. The absence of $u_1$ will influence $t$ regions' visitor count. In this distribution histogram, the difference caused by each of the $t$ regions is 2.
+Thus we get the difference between $H^{t}(D)$ and $H^{t}(D^{'})$ as $2t$. In other words, the global sensitivity of visitor count histogram $H^{t}$ is $2t$.\end{proof}
+
+Consider such a query: how many regions have been visited by no more than $x$ visitors? 
+The way to solve this issue is to publish a cumulative histogram of the $H^t$ distribution mentioned above. 
+We prove that this cumulative histogram $CH^t$ holds a global sensitivity smaller than t.
+
+\begin{lemma} 
+\label{lemma_chk}
+Given two databases $D$ and $D^{'}$ that differ by one individual's records in a stream $S$, we have
+
+\qquad \qquad  \qquad $|| CH^{t}(D) - CH^{t}(D^{'})||_{1} \leq t$
+
+\end{lemma}
+
+\begin{proof}
+In the most extreme case,  $u_i$ passes through $t$ different regions during this time window. Each region influenced by that $u_i$ could cause a difference of at most 1 in cumulative distribution. So the global sensitivity of this cumulative visitor count histogram $CH^{t}$ is $t$.
+\end{proof}
+
+Algorithm \ref{algo5_2} shows the process of how to obtain a noisy cumulative visitor count distribution. 
+The first few steps (line 1 - line 6) are the same as Algorithm \ref{algo5}, and then we get the distribution histogram $H^t$. 
+After that, we convert $H^t$ to be a cumulative histogram $CH^t$ (line 7). 
+Finally we use the Laplace mechanism to perturb $CH^t$ by adding noises to the result (line 8 - line 9).
+
+\begin{algorithm}[ht]
+\caption{$CH^t$-publication} \label{algo5_2}%算法的名字
+\small
+\begin{algorithmic}[1]
+\REQUIRE Time window size $t$, a privacy budget $\epsilon$, and a prefix tree list $TL$= $\{PT_1,\ldots,PT_t\}$      \\
+\ENSURE A noisy cumulative visitor count distribution $CH^t$
+\STATE Initialize a dict $countL$;
+\STATE \textbf{for each} $PT_i \in TL$ \textbf{do}
+\STATE ~~~~\textbf{for all}  $node<key,value> \in PT_i$ \textbf{do}
+\STATE ~~~~~~~~$countL[key]+=value$;
+\STATE \textbf{for each}  $ i \in values(countL)$ \textbf{do}
+\STATE ~~~~$H_i\leftarrow$ Query: how many regions had been visited by $i$ users?
+\STATE ~~~~$CH_i \leftarrow  H_i + CH_{i-1}$;
+\STATE \textbf{for each}  $ i \in values(countL)$ \textbf{do}
+\STATE ~~~~ $CH_i \leftarrow  CH_i + Lap(t/\epsilon)$;
+%\EndFor
+%
+\STATE \textbf{return} $CH^t$
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Adaptive n-groups Histogram}
+\label{section_5_2}
+
+The above algorithm introduces a new idea for publishing the visitor count distribution histogram. However, there are too many bins in this distribution histogram because of the uncertainty of streaming trajectory data, which will make such statistics less intuitive and hard to analyze. One method for solving this issue is to merge the adjacent bins into the same group, thereby greatly reducing the number of bins in the histogram.  
+In this section, we present an adaptive grouping algorithm $AG^n$-$publication$ to publish visitor count distribution histogram.  
+
+\begin{algorithm}[ht]
+\caption{$AG^n$-publication} \label{algo6} %算法的名字
+\small
+\begin{algorithmic}[1]
+\REQUIRE Time window size $t$, a privacy budget $\epsilon$, a prefix tree list $TL$= $\{PT_1,\ldots,PT_t\}$, and a group number $n$ \\
+\ENSURE A noisy distribution histogram $AG^{n}$ 
+\STATE Initialize a dict $countL$;
+\STATE \textbf{for each} $PT_i \in TL$ \textbf{do}
+\STATE ~~~~\textbf{for all}  $node<key,value> \in PT_i$ \textbf{do}
+\STATE ~~~~~~~~$countL[key]+=value$;
+\STATE \textbf{for each}  $ i \in values(countL)$ \textbf{do}
+\STATE ~~~~$H_i\leftarrow$ Query: how many regions had been visited by $i$ users?
+\STATE Select $n$ center points from $H^t$ randomly: $(g_1,\ldots,g_n)$;   
+\STATE \textbf{repeat}
+\STATE ~~~~\textbf{for each} $H_i \in H^t$ \textbf{do} 
+\STATE ~~~~ ~~~~Assign each $H_i$ to $g_j$ by $sd(H_i,g_j)$ and get $AG_j$;
+%\EndFor
+\STATE ~~~~\textbf{for}  $j = 1 \rightarrow n$ \textbf{do} 
+\STATE ~~~~ ~~~~\textbf{for each} $ag \in AG_j$ \textbf{do}
+\STATE ~~~~ ~~~~ ~~~~Compute $error_\_least$  $el(ag , AG_j)$ for $ag$;
+%\EndFor
+\STATE ~~~~ ~~~~Select $ag$ whose $el(ag)$ is the least as new $g_j$; 
+%\EndFor
+\STATE \textbf{until} convergence condition is satisfied
+\STATE \textbf{for each} $AG_j \in AG$ \textbf{do}
+\STATE ~~~~$AG_j \leftarrow AG_j + Lap(\Delta his/\epsilon)$;
+%\EndFor
+\STATE \textbf{return} $AG^n$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{figure*}[t]
+\setlength{\abovecaptionskip}{0.cm}
+\centering
+\subfigure[$T_1$ (Porto)]{
+\includegraphics[width=4.75cm,height=1.2in]{figs//flows.pdf}
+%\caption{fig1}
+\label{tdriversample1}
+}
+\quad
+\subfigure[$T_2$ (T-drive)]{
+\includegraphics[width=4.75cm,height=1.2in]{figs//flows.pdf}
+\label{tdriversample2}
+}
+\quad
+\subfigure[$T_3$ (NYC)]{
+\includegraphics[width=4.75cm,height=1.2in]{figs//flows.pdf}
+\label{tdriversample3}
+}
+\quad
+\subfigure[$T_4$ (Porto)]{
+%\includegraphics[width=4cm]{fig//geo_35_5_14.png}
+\includegraphics[width=4.75cm,height=1.2in]{figs//flows.pdf}
+%\caption{fig1}
+\label{geolifesample1}
+}
+\quad
+\subfigure[$T_5$ (T-drive)]{
+\includegraphics[width=4.75cm,height=1.19in]{figs//flows.pdf}
+\label{geolifesample2}
+}
+\quad
+\subfigure[$T_6$ (NYC)]{
+\includegraphics[width=4.75cm,height=1.18in]{figs//flows.pdf}
+\label{geolifesample3}
+}
+\caption{The privacy-preserving trajectories from different dataset}
+\label{fig3}
+\end{figure*}
+
+
+% In Algorithm \ref{algo6}, the first three steps (line 1- line 3) are the same as Algorithm \ref{algo5}, where we get the distribution histogram $H(D)$. 
+In Algorithm \ref{algo6}, we get the original distribution histogram $H^t(D)$ in the first few steps (line 1 - line 6), and then randomly select $n$ center points from $H^t$ (line 7). 
+Next, for each bin $H_i$ in $H^t$, the algorithm determines the group which $H_i$ will divide to according to the sequence distance $sd(H_i,g_j)$. In other words, we can assign each $H_i$ to its corresponding group $g_j$, and satisfy that the bin of $H_i$ is closest to the center point of the group (the value of $sd(H_i,g_j)$ is the minimum).
+The sequence distance $sd(H_i,g_j)$ is shown below:
+
+\begin{equation}
+sd(H_i,g_j)= \frac{\sum_{h_t \in (H_i,g_j]}{|h_t-g_j|}}{|p-i|}
+\end{equation}
+
+where $p$ is the position of $g_j$ in histogram $H^t(D)$.
+
+According to the value of sequence distance between $H_i$ and $g_j$, we select the least $g_j$ and assign $H_i$ to group of $g_j$ (line 9 - line 10).
+After this operation, we partition $H^t(D)$ into $n$ sets $AG_1,\ldots, AG_k$. 
+After that, for each group $AG_j$ in histogram $AG$, we compute $error_\_least$ $el(ag)$ for each bin in $AG_j$. 
+Note that the value of  $el(ag , AG_j)$ is the variance of the $AG_j$ except $ag$, i.e., $el(ag , AG_j)$ = $Var(AG_j-\{ag\})$. 
+Next, we update the center point $g_j$ according to $ag$ whose  $el(ag , AG_j)$ is the least (line 11 - line 14). 
+This center point means that it has the least effect on the variance of this set, thus it is the most suitable value as a new candidate center point $g_j$. 
+The updating rule of the grouping is iterated until the convergence condition is satisfied. Finally, we add noise to each bin of the $AG^{n}$ distribution histogram by using the Laplace mechanism (line 16 - line 17). 
+ 
+\begin{lemma}
+\label{lemma_AG}
+
+Given two databases $D$ and $D^{'}$ which differ by one individual's records in a stream $S$, we have 
+
+%\qquad \qquad  \qquad $|| AG^{n}(D) - AG^{n}(D^{'})||_{1} \leq 2t$
+
+\begin{equation}
+\Delta his = || AG^{n}(D) - AG^{n}(D^{'})||_{1} \leq
+\left\{  
+\begin{array}{lcl}
+2t,& n\geq2t \\ 
+2\lfloor \frac{n}{2} \rfloor,	& n<2t \\ 			
+\end{array} 
+\label{oa:loss_t}
+\right.
+\end{equation}
+
+\end{lemma}
+
+
+\begin{proof}
+
+Similar to the proof of Lemma \ref{lemma_hk}, in the worst case, $u_1$ passes through $t$ different regions (i.e., affects $t$ bins in the histogram). 
+The value of the current bin is reduced by 1, corresponding to the value of the previous bin increased by 1. 
+Thus the absence of $u_1$ will influence $2t$ bins. Specifically, to judge the global sensitivity sensitivity $\Delta his$ of $AG^n$-Histogram, there are two cases as follows:
+
+\begin{itemize}
+  \item [1)] 
+When $n\geq2t$, in the worst case each bin is individually contained by one of the groups. 
+That is to say, the global sensitivity for the $AG^n$-Histogram is $2t$ when $n\geq2t$.
+
+\item [2)] 
+When $n<2t$, suppose that each of the first $n-1$ groups contain one bin, then the last group has $2t-(n-1)$ bins. 
+More precisely, when the last group has an odd number of affected bins, it will make the group have a difference of 1 from the original one. 
+As for the case that this group has an even number of affected bins, effects are offset by each other in the group with 0 difference. 
+Thereby the global sensitivity for the $AG^n$-Histogram is  $k=(n-1)$+$(2t-(n-1))\%2$. 
+\begin{itemize}
+\item [·] When $n$ is an odd number, the value of  $((2t-(n-1))\%2$ is 0 and $k=n-1$. 
+\item [·] When $n$ is an even number, the value of  $((2t-(n-1))\%2$ is 1 and $k=n$.
+\end{itemize}
+In summary, the global sensitivity $\Delta his$ for the $AG^n$-Histogram is no larger than $2\lfloor \frac{n}{2} \rfloor$ when $n<2t$.\end{itemize}\end{proof}
+
+
+\section{Evaluation}
+
+\subsection{Experimental Setup}
+
+\subsubsection{\textbf{Datasets}}
+%{\bfseries Datasets.}
+We used three real-world datasets in our experiments: T-drive, NYC, and Porto.
+The first dataset comes from the T-drive project of Microsoft, 
+which includes trajectory data for more than 10,000 taxis in Beijing in one week. 
+For NYC, we collect taxi trips in New York in Nov 2013, while each trip contains the pick-up and drop-off time and coordinates. 
+We use Graphhopper $\footnote{https://www.graphhopper.com}$ to generate approximate trajectories from NYC.  
+The last dataset was collected from Porto, Portugal in July 2013., which contains about 7,000 taxi trajectories. 
+% We have determined that there are a number of outliers in original datasets, such as coordinates of some locations deviate significantly from the original trajectory. Thereby we have removed them from these datasets for clarity. 
+The detailed statistics of these datasets are summarized in Table \ref{table_2}. 
+$|A|$ is the area of the road network in the dataset, and $|T|$ is the total number of records in each dataset.
+$AvgDist$, $AvgTime$, and $AvgSpeed$ are the average distance, average duration and average speed of the trajectories in the dataset, respectively.
+\begin{table}[h]
+\setlength{\abovecaptionskip}{0.cm}
+%\resizebox{\textwidth}{12mm}
+\renewcommand{\arraystretch}{1.0}
+  \caption{Statistics of datasets}
+  \label{table_2}
+%\resizebox{\textwidth}{10mm}{
+
+\setlength{\tabcolsep}{1.4mm}{
+  \begin{tabular}{|c|c|c|c|c|c|} \hline
+   % \toprule
+    Dataset & $|A|$ & $|T|$ & $AvgDist$  & $AvgTime$ & $AvgSpeed$ \\ \hline
+    %\midrule
+T-drive&	934${km}^2$ &250997& 31056$m$  &  4436$s$&24.5$km/h$\\   \hline
+NYC & 950${km^2}$	 &  287397 & 4754$m$ & 633$s$ & 26.2$km/h$\\ \hline
+Porto &	270${km}^2$ & 7324 & 5761$m$ & 677$s$& 32.1$km/h$\\ \hline
+  %\bottomrule
+\end{tabular}}
+\end{table}
+
+
+\subsubsection{\textbf{Environment}}
+% We used the datasets mentioned above to imitate the generation of trajectory. 
+% All the algorithms are implemented on a PC with Intel Core
+% i5-3230 @2.60GHz and 12GB RAM, and the codes were implemented in Python.
+We used the datasets mentioned above to imitate the generation of trajectories. 
+% The experiments are conducted on a 3-node cluster, each equipped with two Xeon CPU E5-2670 2.60GHZ processors and 64GB RAM. 
+The experiments are conducted on a cluster of 3 nodes. Each node is equipped with two Xeon CPU E5-2670 2.60GHZ processors and 64GB RAM. 
+To eliminate the uncertainty of the experiments, we report the average of the results executed ten times for each experiment.
+
+
+
+\subsubsection{\textbf{Evaluation Metrics.}} We use several metrics to evaluate our algorithms.
+
+{\bfseries DTW Distance.} 
+There are several similarity measures which are available for trajectory similarity query, such as Edit Distance on Real sequence (EDR) \cite{chen2005robust}, Longest Common Subsequence (LCSS) \cite{morse2007efficient} and Dynamic Time Warping (DTW) \cite{yi1998efficient}.
+Wang et al. \cite{wang2018torch} have performed an effectiveness evaluation of these similarity measures and found that DTW has a higher effect than the other similarity measures. 
+Meanwhile, the calculation of DTW-distance is not limited by the same number of track points. 
+Therefore, we choose DTW-distance as our evaluation metric to measure the similarity between two trajectories. 
+Given a trajectory $A=(a_1,a_2,\ldots,a_m)$ and another trajectory $B=(b_1,b_2,\ldots,b_n)$. 
+In order to calculate the distance between these two trajectories, we form a matrix $D$ with dimension $(m*n)$. 
+Each element $D(i,j)$ is calculated as follows:
+%The formula of DTW distance is as follows:  
+\begin{equation}
+D\,(i,j) = d\,(i,j)+ min
+\left\{  
+\begin{array}{lcl}
+D \, (i-1,j) \\
+D \,(i,j-1) \\
+D \,(i-1,j-1)
+										
+\end{array} 
+\label{oa:loss_t}
+\right.
+\end{equation}
+The DTW-distance we desire is the element $D(m,n)$.
+Euclidean distance $d (i,j)$ is used here for calculating the distance between the two coordinate points to be compared.  
+In particular, $D(0, 0)$ = 0, $D(0, j) = D(i, 0)$ = inf. (inf represents a positive infinite number).
+%Similar to previous work \cite{Kasiviswanathan2013Analyzing}, in order to evaluate the similarity between two different histograms, we use $L_1$ distance and KS-distance as the utility metrics.
+
+{\bfseries Query Answering.} According to the evaluation metric in \cite{gursoy2018differentially}, we use Query Answering as an evaluating method to measure the utility of our algorithm. 
+Let $Q$ denotes a counting query:“Return the number of trajectories passing through a circular region with center c and radius r”. $Q(D)$ denotes its answer when the input is original result set $D$ and lower bound threshold $b$ = 1\% * $|D|$. 
+Given $D$ and its perturbed result set $S_D$, the relative error (RE) of $Q$ can be defined as follows:
+% According to the evaluation metric in \cite{gursoy2018differentially}, we use Query Answering as an evaluating method between the original trajectory database and the adjusted trajectory database. Let $Q$ denotes a counting query:“Return the number of trajectories passing through a circular region with center c and radius r”. $Q(D)$ denotes its answer when the input is database $D$ and $b$ = 1\% * $|D|$. Given the original database $D$ and synthetic database $S_D$, the $relative$  $error$ $(RE)$ of $Q$ is:
+\begin{equation}
+RE = \frac{|Q(D)-Q(S_D)|}{max\{Q(D),b\}}
+\end{equation}
+
+Through the above formula, we can calculate RE corresponding to query $Q$. 
+This utility metric measures the accuracy in answering result set and is widely be used for performance evaluation of classification and prediction algorithms. 
+
+
+{\bfseries L1 Distance.} Similar to previous work \cite{Kasiviswanathan2013Analyzing} , we use $L_1$-distance as the utility metric to measure the difference between two histograms. In general, given two histograms $H$=$(h_0,\ldots,$ $h_{k-1})$ and  $H^{'}$=$(h_{0}^{'},\ldots,h_{k-1}^{'})$ with length $k$, the $L_1$-distance between them is:
+\begin{equation}
+||H - H^{'}||_1 = \sum_{i=0}^{k-1}{|h_i-h_{i}^{'}|} 
+\end{equation}
+
+
+\subsection{Analysis of Privacy Budget Selections}
+
+
+In Figure \ref{fig3} we visually compare the degree of deviation between the original trajectory and the synthetic one through various trajectory paths. 
+We set the time window size $t$ to 5 minutes and select two typical trajectories in each of the three datasets as examples.
+Detailed statistics about these sub-graphs are shown in Table \ref{table_3}.
+Among them, the fifth to seventh columns of the table represent the DTW-distance between the original trajectory and the synthetic one after processing with differential privacy budget.
+Combining the table with these sub-graphs, we can see that as the privacy budget increases, the synthetic trajectory is more consistent with the original one in shape.
+%from these subgraphs, we can see that as the privacy budget increases, the synthetic trajectory is more consistent with the original trajectory in shape.
+Since if the privacy budget $\epsilon$ becomes larger, the noise added to each position is smaller, so the deviation between the original trajectory and the synthetic one decreases. 
+
+\begin{table}[h]
+\setlength{\abovecaptionskip}{0.cm}
+  \caption{Statistics in Figure \ref{fig3} }
+  \label{table_3}
+\setlength{\tabcolsep}{1.45mm}{
+ \begin{tabular}{|c|c|c|c|c|c|c|} \hline
+   % \toprule
+    Dataset & Track & Dist & Time & $\epsilon$ = 0.5 &$\epsilon$ = 1.0 &  $\epsilon$ = 2.0\\ \hline
+ 
+ \multirow{2}*{Porto}&$T_1$& 3957$m$ &  442$s$&1.00&0.93&0.86 \\ \cline{2-7}
+&$T_4$& 7224$m$ &  903$s$&1.45&1.25&1.01\\ \cline{1-7}
+
+\multirow{2}* {T-drive}&$T_2$& 8615$m$ &   1680$s$&1.79&1.42&1.37\\ \cline{2-7}
+&$T_5$& 8620$m$ &  1320$s$&3.14&2.72&2.40\\ \cline{1-7}
+ \multirow{2}*{NYC}&$T_3$& 9449$m$ &  1535$s$&2.13&1.88&1.38\\ \cline{2-7} 
+&$T_6$& 5490$m$ & 962$s$&1.95&1.26&0.96\\ \hline
+  %\bottomrule
+\end{tabular}}
+\end{table}
+
+\subsection{Analysis of Selection of $t$}
+
+
+
+%According to the original hypothesis, a smaller time window size $S_w$ will increase the number of segments in our trajectory, which may bring more noise to the entire trajectory.  
+%We use DTW-distance and RE to evaluate the similarity between trajectories randomly sampled from the dataset, making it easier to select the most appropriate $S_w$ for each dataset (shown in Fig. \ref{fig4}). 
+%As for Porto dataset, DTW-distance and RE between the synthetic trajectory and the original one are close regardless of the value of $S_w$, but it is clear that the effect is better when $S_w$ is set to 3 minutes. 
+%Unlike Porto dataset, the overall value of DTW-distance in the other datasets are all in a relatively large magnitude. Meanwhile, the distribution of these evaluation metrics for different $S_w$ are also different from those in Porto.
+%In T-drive dataset, the value of DTW and RE both show a significant downward trend while $S_w$ increases.
+%It indicates that the best choice of $S_w$ in T-drive is 7, which can guarantee data utility of these trajectories. 
+%In NYC dataset, comparing to the case that $S_w$ is 3, DTW-diatance in the other two cases are relatively small (shown in Fig. \ref{dtw_pic}).
+%Moreover, there is almost no difference in DTW-diatance for these two cases, and a similar distribution also appears on RE in Fig. \ref{re_pic}. 
+%Therefore, either 5 or 7 is a more appropriate window size selection for NYC.
+
+
+According to the original hypothesis, a smaller time window size $t$ will increase the number of segments in our trajectory, which may bring more noise to the entire trajectory.  
+We use DTW and RE to evaluate the similarity between trajectories randomly sampled from different datasets, making it easier to select the most appropriate $t$ for each dataset (shown in Figure \ref{fig4}). 
+In T-drive and NYC, the overall values of DTW and RE are both in a relatively large magnitude, and show a significant downward trend while $t$ increases. 
+It indicates that the best choice of $t$ in T-drive is 7, which can guarantee data utility of these trajectories. 
+In NYC, comparing to the case that $t$ is 3, the value of DTW and RE in the other two cases are relatively small (shown in Figure \ref{dtw_pic}), and there is almost no difference in the value of evaluation metrics for these two cases.
+Therefore, either 5 or 7 is a more appropriate window size selection for NYC. 
+As for Porto dataset, the overall values of evaluation metrics are both in a relatively small magnitude and show an increasing trend which completely opposite to the other two datasets. The effect is better when $t$ is set to 3 minutes for Porto. 
+According to the characteristics of Porto and the actual experimental results, we believe that the dataset contains many trajectories with short time, which will greatly reduce the influence of noise on the data.
+
+
+%As for Porto dataset, DTW and RE between the synthetic trajectory and the original one are close regardless of the value of $S_w$, but it is clear that the effect is better when $S_w$ is set to 3 minutes. 
+
+
+\begin{figure}[th]
+\setlength{\abovecaptionskip}{0.1cm}
+\centering
+\subfigure[DTW $(\epsilon = 2)$]{
+\includegraphics[width=3.79cm,height=1.2in]{figs//dtw.pdf}
+%\caption{fig1}
+\label{dtw_pic}
+}
+\quad
+\subfigure[RE  $(\epsilon = 2)$]{
+%\includegraphics[width=3.79cm,height=1.15in]{fig//plotsRE.pdf} 
+\includegraphics[width=3.79cm,height=1.2in]{figs//plotREs.pdf} 
+\label{re_pic}
+}
+\caption{Evaluation metrics in different datasets}
+\label{fig4}
+\end{figure}
+
+\begin{figure}[h]
+\setlength{\abovecaptionskip}{0.1cm}
+\centering
+\subfigure[visitor count distribution  $(t=5)$ ]{
+\label{fig_7_a}
+\includegraphics[width=3.87cm,height=1.1in]{figs//H3.pdf}
+}
+\quad
+\subfigure[cumulative distribution $(t=5)$]{
+\label{fig_7_b}
+\includegraphics[width=3.87cm,height=1.1in]{figs//CH3.pdf}
+}
+\quad
+\subfigure[visitor count distribution $(t=10)$]{
+\label{fig_7_c}
+\includegraphics[width=3.87cm,height=1.1in]{figs//H7.pdf}
+}
+\quad
+\subfigure[ cumulative distribution $(t=10)$]{
+\label{fig_7_d}
+\includegraphics[width=3.87cm,height=1.1in]{figs//CH7.pdf}
+}
+\caption{Comparison of distributions $H^t$ and $CH^t$}
+\label{fig_7}
+\end{figure}
+
+
+\begin{figure*}[t]
+\setlength{\abovecaptionskip}{0.15cm}
+\centering
+\subfigure[$AG^{5}$ (t=5)]{
+\label{fig_8_a1}
+\includegraphics[width=3.895cm,height=1in]{figs//AG_5_5.pdf}
+}
+\quad
+\subfigure[$AG^{16}$  (t=5)]{
+\label{fig_8_b1}
+\includegraphics[width=3.895cm,height=1in]{figs//AG_16_5.pdf}
+}
+\quad
+\subfigure[$AG^{16}$ (t=10)]{
+\label{fig_8_c1}
+\includegraphics[width=3.895cm,height=1in]{figs//AG_16_10.pdf}
+}
+\quad
+\subfigure[$AG^{20}$ (t=10)]{
+\label{fig_8_d1}
+\includegraphics[width=3.895cm,height=1in]{figs//AG_20_10.pdf}
+}
+\caption{Different combinations of $k$ and $\epsilon$ for $AG$-Histogram}
+\label{fig8_0}
+\end{figure*}
+
+
+
+\subsection{Analysis of $\pmb{H^{t}}$-Histogram and \\ $\pmb{CH^{t}}$-Histogram}
+In the next experiments, we all use T-drive as the experimental dataset since it has more real and specific location data than the other two datasets.
+In Figure \ref{fig_7} we compare the difference between original distribution of visitor count and the one with added noise.
+Comparing Figure \ref{fig_7_a} and Figure \ref{fig_7_c}, we find that as $t$ is set up to a higher value, the fluctuation in this histogram becomes greater. This case is also reflected in Fig. \ref{fig_7_b} and Fig. \ref{fig_7_d}.
+Meanwhile, when we hold $t = 5$, the undulation between each bin in Figure \ref{fig_7_a} are much larger than that in Figure \ref{fig_7_b}. 
+Since we have proved that the global sensitivity of visitor count distribution is $2t$ and the cumulative one is $t$, the noise added to the former is twice that of the latter. 
+Therefore, for publishing visitor count distribution, cumulative distribution $CH^{t}$ is more effective than visitor count distribution $H^{t}$.
+
+
+\subsection{Analysis of $\pmb{AG^{n}}$-Histogram}
+
+
+
+Experimental results of $AG^{n}$-Histogram with different parameters $t$ and $n$ are presented in Figure \ref{fig8_0}.
+Obviously,  $AG^{n}$-Histogram is more intuitive than $H^{t}$-Histogram.
+Meanwhile, from Figure \ref{fig_8_a1} to Figure \ref{fig_8_d1}, we find that the oscillation between the original distribution and the noise distribution in each histogram increases continuously. 
+More specifically, the deviation in Figure \ref{fig_8_b1} is slightly larger than that in  Figure \ref{fig_8_a1}. 
+%However, since the former has a larger number of groups, it is more intuitive to show the distribution of visitor count. 
+However, since the former has a larger but more appropriate number of groups, it is more intuitive to show the distribution of visitor count. 
+As for Figure \ref{fig_8_c1} and Figure \ref{fig_8_d1}, the former one achieves quite good effects on saving the statistical characteristics of the real distributions.
+Therefore, the best choice of window size $t$ can be in the range of 5 to 10, and the number of groups $n$ is around 16. 
+This selection can achieve better utility in distribution of statistics while guaranteeing the privacy properly.
+
+
+\subsection{Analysis of Utility Metric}
+
+
+In this section, we use $L_1$-distance to evaluate and analyze our visitor count distribution histograms.
+In Figure \ref{fig_9_a} and Figure \ref{fig_9_b}, we find that smaller $\epsilon$ and larger $t$ increase the values of $L_1$-distance, which means a larger error for the visitor count histogram to be published.
+In addition, the number of groups $n$ is positively correlated with the magnitude of $L_1$-distance in $AG^n$, which verified the conclusion we have drawn from Figure \ref{fig8_0}.
+In Figure \ref{fig_9_d}, when $\epsilon$ is fixed, we get a larger $L_1$-distance with a larger $t$, corresponding to the Lemma \ref{lemma_AG}. 
+However, for the case of $n$=8 in Figure \ref{fig_9_c}, when $\epsilon$ is increased to more than 1, the error between the original distribution and the noise-added one caused by selection of $t$ is very close. 
+%Selection of $t$ does not play a decisive role in the case that we choose a smaller $n$.
+This illustrates that selection of $t$ does not play a decisive role in privacy protection of $AG^n$ when we choose a smaller $n$.
+%When we choose a smaller $n$, selection of $t$ does not play a decisive role in the privacy protection of the distribution histogram $AG^n$.
+\begin{figure}[t]
+\setlength{\abovecaptionskip}{0.1cm}
+\centering
+\subfigure[$L_1$ of $H^t$]{
+\label{fig_9_a}
+\includegraphics[width=3.79cm,height=1.0in]{figs//L1_H1.pdf}
+}
+\quad
+\subfigure[$L_1$ of $CH^t$]{
+\label{fig_9_b}
+\includegraphics[width=3.79cm,height=1.0in]{figs//L1_CH.pdf}
+}
+\quad
+\subfigure[$L_1$ of $AG^n$ (n = 8)]{
+\label{fig_9_c}
+\includegraphics[width=3.79cm,height=1.0in]{figs//L1_8.pdf}
+}
+\quad
+\subfigure[$L_1$ of $AG^n$ (n = 16)]{
+\label{fig_9_d}
+\includegraphics[width=3.79cm,height=1.0in]{figs//L1_16.pdf}
+}
+\caption{Utility metrics for different $k$ and $\epsilon$}
+\label{fig_9}
+\end{figure}
+
+\section{Conclusions}
+In this paper, we proposed TSP, a novel framework to publish streaming trajectory based on the $k_t-$trajectory privacy model. According to the characteristics of the trajectory stream, we sample and blur the positions, and then synthesize a new trajectory which satisfies users' privacy preferences using DP. In addition, we presented novel algorithms for publishing visitor count distribution histogram $H^t$ and $CH^t$, and proved that the global sensitivities of them are $2t$ and $t$ respectively. Meanwhile, an adaptive visitor count distribution histogram $AG^{n}$ algorithm was also proposed, which allows us to observe the distribution of histogram more intuitively while improving data utility. Finally, we used DTW-distance and RE to evaluate TSP, and  $L_1$-distance to evaluate our proposed algorithms for publishing visitor count distribution histograms. Experimental results showed that our proposed trajectory stream publishing method and statistical histogram publishing algorithms achieve high data utility but low privacy sensitivity when appropriate parameters are selected.
+
+	
+
+\section*{}
+	\bibliographystyle{plain}
+	\bibliography{sigprocs}
+	
+\end{document}
